@@ -7,6 +7,8 @@ defmodule Dimse.IntegrationTest do
   @study_root_find "1.2.840.10008.5.1.4.1.2.2.1"
   @study_root_get "1.2.840.10008.5.1.4.1.2.2.3"
   @study_root_move "1.2.840.10008.5.1.4.1.2.2.2"
+  @basic_grayscale_print_management_meta "1.2.840.10008.5.1.1.9"
+  @basic_film_session "1.2.840.10008.5.1.1.1"
 
   defp wait_for_established(assoc, timeout \\ 2_000) do
     contexts = Dimse.Association.negotiated_contexts(assoc)
@@ -834,6 +836,35 @@ defmodule Dimse.IntegrationTest do
   end
 
   describe "N-CREATE end-to-end" do
+    test "SCU can send N-CREATE for Film Session over negotiated Print Management Meta context" do
+      test_pid = self()
+      create_data = :crypto.strong_rand_bytes(64)
+      created_uid = "1.2.826.0.1.3680043.8.498.1002"
+
+      handler =
+        n_create_handler(test_pid, nil, created_uid, @basic_grayscale_print_management_meta)
+
+      {:ok, ref} = Dimse.start_listener(port: 0, handler: handler)
+      port = :ranch.get_port(ref)
+
+      {:ok, assoc} =
+        Dimse.connect("127.0.0.1", port,
+          calling_ae: "PRINT_SCU",
+          called_ae: "DIMSE",
+          abstract_syntaxes: [@basic_grayscale_print_management_meta]
+        )
+
+      wait_for_established(assoc)
+
+      assert {:ok, 0x0000, ^created_uid, nil} =
+               Dimse.n_create(assoc, @basic_film_session, create_data, timeout: 5_000)
+
+      assert_receive {:n_create_called, ^create_data}, 2_000
+
+      assert :ok = Dimse.release(assoc, 5_000)
+      Dimse.stop_listener(ref)
+    end
+
     test "SCU creates and receives created data" do
       test_pid = self()
       create_data = :crypto.strong_rand_bytes(64)
@@ -1718,7 +1749,12 @@ defmodule Dimse.IntegrationTest do
     mod
   end
 
-  defp n_create_handler(test_pid, response_data, created_uid) do
+  defp n_create_handler(
+         test_pid,
+         response_data,
+         created_uid,
+         abstract_syntax \\ @test_n_sop_class
+       ) do
     mod = :"Dimse.Test.NCreateHandler.#{System.unique_integer([:positive])}"
 
     Module.create(
@@ -1727,7 +1763,7 @@ defmodule Dimse.IntegrationTest do
         @behaviour Dimse.Handler
 
         @impl true
-        def supported_abstract_syntaxes, do: [unquote(@test_n_sop_class)]
+        def supported_abstract_syntaxes, do: [unquote(abstract_syntax)]
 
         @impl true
         def handle_echo(_command, _state), do: {:ok, 0x0000}

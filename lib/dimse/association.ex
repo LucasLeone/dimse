@@ -1433,8 +1433,11 @@ defmodule Dimse.Association do
 
   defp find_context_id(contexts, sop_class) do
     Enum.find_value(contexts, fn
-      {id, {^sop_class, _ts}} -> id
-      _ -> nil
+      {id, {abstract_syntax, _ts}} ->
+        if compatible_sop_class?(abstract_syntax, sop_class), do: id
+
+      _ ->
+        nil
     end)
   end
 
@@ -1447,13 +1450,35 @@ defmodule Dimse.Association do
 
         case sop_class_uid do
           nil -> true
-          uid -> uid == abstract_syntax
+          uid -> compatible_sop_class?(abstract_syntax, uid)
         end
 
       nil ->
         false
     end
   end
+
+  defp compatible_sop_class?(uid, uid), do: true
+
+  defp compatible_sop_class?("1.2.840.10008.5.1.1.9", sop_class_uid) do
+    sop_class_uid in [
+      "1.2.840.10008.5.1.1.1",
+      "1.2.840.10008.5.1.1.2",
+      "1.2.840.10008.5.1.1.4",
+      "1.2.840.10008.5.1.1.16"
+    ]
+  end
+
+  defp compatible_sop_class?("1.2.840.10008.5.1.1.18", sop_class_uid) do
+    sop_class_uid in [
+      "1.2.840.10008.5.1.1.1",
+      "1.2.840.10008.5.1.1.2",
+      "1.2.840.10008.5.1.1.4.1",
+      "1.2.840.10008.5.1.1.16"
+    ]
+  end
+
+  defp compatible_sop_class?(_abstract_syntax, _sop_class_uid), do: false
 
   defp get_in_user_info(%{user_information: %Pdu.UserInformation{} = ui}, field) do
     Map.get(ui, field)
