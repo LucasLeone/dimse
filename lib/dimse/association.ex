@@ -1408,10 +1408,16 @@ defmodule Dimse.Association do
   defp handler_abstract_syntaxes(nil), do: MapSet.new(["1.2.840.10008.1.1"])
 
   defp handler_abstract_syntaxes(handler) do
-    if function_exported?(handler, :supported_abstract_syntaxes, 0) do
-      handler.supported_abstract_syntaxes() |> MapSet.new()
-    else
-      MapSet.new(["1.2.840.10008.1.1"])
+    case Code.ensure_loaded(handler) do
+      {:module, ^handler} ->
+        if function_exported?(handler, :supported_abstract_syntaxes, 0) do
+          handler.supported_abstract_syntaxes() |> MapSet.new()
+        else
+          MapSet.new(["1.2.840.10008.1.1"])
+        end
+
+      {:error, _reason} ->
+        MapSet.new(["1.2.840.10008.1.1"])
     end
   end
 

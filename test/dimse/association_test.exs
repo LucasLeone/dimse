@@ -48,12 +48,70 @@ defmodule Dimse.AssociationTest do
   defmodule NoSyntaxHandler do
   end
 
+  defmodule SupportedSyntaxHandler do
+    def supported_abstract_syntaxes, do: ["1.2.840.10008.5.1.4.1.1.2"]
+  end
+
   defmodule AuthOkNilHandler do
     def handle_authenticate(_identity, _state), do: {:ok, nil}
   end
 
   defmodule ValidationOkNilHandler do
     def validate_association(_rq, _state), do: {:ok, nil}
+  end
+
+  describe "handler_abstract_syntaxes/1" do
+    test "defaults to Verification when handler is nil" do
+      assert Association.test_handler_abstract_syntaxes(nil) == MapSet.new([@verification_uid])
+    end
+
+    test "defaults to Verification when handler has no supported abstract syntaxes" do
+      assert Association.test_handler_abstract_syntaxes(NoSyntaxHandler) ==
+               MapSet.new([@verification_uid])
+    end
+
+    test "uses supported abstract syntaxes from a loaded handler" do
+      assert Association.test_handler_abstract_syntaxes(SupportedSyntaxHandler) ==
+               MapSet.new([@ct_image_storage])
+    end
+
+    test "loads an unloaded handler before checking supported abstract syntaxes" do
+      module = Module.concat(__MODULE__, UnloadedSupportedSyntaxHandler)
+      beam_dir = Path.join(System.tmp_dir!(), "dimse_association_test_#{System.unique_integer()}")
+
+      try do
+        File.mkdir_p!(beam_dir)
+        source_path = Path.join(beam_dir, "unloaded_supported_syntax_handler.ex")
+
+        source = """
+        defmodule #{inspect(module)} do
+          def supported_abstract_syntaxes, do: ["#{@ct_image_storage}"]
+        end
+        """
+
+        File.write!(source_path, source)
+
+        assert {:ok, _, %{compile_warnings: [], runtime_warnings: []}} =
+                 Kernel.ParallelCompiler.compile_to_path([source_path], beam_dir,
+                   return_diagnostics: true
+                 )
+
+        :code.purge(module)
+        :code.delete(module)
+
+        assert false == function_exported?(module, :supported_abstract_syntaxes, 0)
+        assert true == :code.add_patha(String.to_charlist(beam_dir))
+
+        assert Association.test_handler_abstract_syntaxes(module) ==
+                 MapSet.new([@ct_image_storage])
+      after
+        :code.del_path(String.to_charlist(beam_dir))
+        File.rm_rf!(beam_dir)
+
+        :code.purge(module)
+        :code.delete(module)
+      end
+    end
   end
 
   describe "start_link/1" do
