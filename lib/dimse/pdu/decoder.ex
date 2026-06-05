@@ -208,7 +208,9 @@ defmodule Dimse.Pdu.Decoder do
 
   ## Presentation Context parsers
 
-  defp parse_presentation_context_rq(<<id, 0x00, 0x00, 0x00, sub_items::binary>>) do
+  defp parse_presentation_context_rq(
+         <<id, _reserved1, _reserved2, _reserved3, sub_items::binary>>
+       ) do
     case parse_syntax_items(sub_items) do
       {:ok, abstract, transfers} ->
         {:ok,

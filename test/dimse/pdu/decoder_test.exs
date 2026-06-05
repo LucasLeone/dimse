@@ -224,6 +224,42 @@ defmodule Dimse.Pdu.DecoderTest do
       assert "1.2.840.10008.1.2.1" in pc.transfer_syntaxes
     end
 
+    test "decodes presentation context RQ with non-zero reserved bytes" do
+      application_context = "1.2.840.10008.3.1.1.1"
+      abstract_syntax = "1.2.840.10008.5.1.1.9"
+      transfer_syntax = "1.2.840.10008.1.2"
+
+      header =
+        <<1::16, 0::16>> <>
+          String.pad_trailing("IMPRINTSCP", 16) <>
+          String.pad_trailing("TCPPRT", 16) <>
+          :binary.copy(<<0>>, 32)
+
+      application_context_item =
+        <<0x10, 0x00, byte_size(application_context)::16>> <> application_context
+
+      abstract_syntax_item =
+        <<0x30, 0x00, byte_size(abstract_syntax)::16>> <> abstract_syntax
+
+      transfer_syntax_item =
+        <<0x40, 0x00, byte_size(transfer_syntax)::16>> <> transfer_syntax
+
+      presentation_context =
+        <<1, 0, 0xFF, 0>> <> abstract_syntax_item <> transfer_syntax_item
+
+      presentation_context_item =
+        <<0x20, 0x00, byte_size(presentation_context)::16>> <> presentation_context
+
+      payload = header <> application_context_item <> presentation_context_item
+      binary = <<0x01, 0x00, byte_size(payload)::32>> <> payload
+
+      assert {:ok, %Pdu.AssociateRq{} = rq, <<>>} = Decoder.decode(binary)
+      assert [%Pdu.PresentationContext{} = pc] = rq.presentation_contexts
+      assert pc.id == 1
+      assert pc.abstract_syntax == abstract_syntax
+      assert pc.transfer_syntaxes == [transfer_syntax]
+    end
+
     test "decodes user information" do
       binary = PduHelpers.associate_rq_binary(max_pdu_length: 32_768)
       {:ok, rq, <<>>} = Decoder.decode(binary)
